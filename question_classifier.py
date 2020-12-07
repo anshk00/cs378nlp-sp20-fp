@@ -5,6 +5,8 @@ import re
 import string
 import spacy
 import en_core_web_sm
+from utils import load_cached_embeddings
+import ne_model
 
 def read_data(gold_file):
     """Reads answers from dataset file. Each question (marked by its qid)
@@ -54,6 +56,28 @@ def read_sentiment_examples(questions, answers) -> List[SentimentExample]:
 
     exs = []
     label = 0 #LABELS SHOULD HAVE A SEPARATE INDEXER
+    ne_indexer = Indexer()
+    
+    ne_indexer.add_and_get_index("N/A")
+    ne_indexer.add_and_get_index("PERSON")
+    ne_indexer.add_and_get_index("NORP")
+    ne_indexer.add_and_get_index("FAC")
+    ne_indexer.add_and_get_index("ORG")
+    ne_indexer.add_and_get_index("GPE")
+    ne_indexer.add_and_get_index("LOC")
+    ne_indexer.add_and_get_index("PRODUCT")
+    ne_indexer.add_and_get_index("EVENT")
+    ne_indexer.add_and_get_index("WORK_OF_ART")
+    ne_indexer.add_and_get_index("LAW")
+    ne_indexer.add_and_get_index("LANGUAGE")
+    ne_indexer.add_and_get_index("DATE")
+    ne_indexer.add_and_get_index("TIME")
+    ne_indexer.add_and_get_index("PERCENT")
+    ne_indexer.add_and_get_index("MONEY")
+    ne_indexer.add_and_get_index("QUANTITY")
+    ne_indexer.add_and_get_index("ORDINAL")
+    ne_indexer.add_and_get_index("CARDINAL")
+
     nlp = en_core_web_sm.load()
 
     for i in range(len(questions)):
@@ -64,7 +88,7 @@ def read_sentiment_examples(questions, answers) -> List[SentimentExample]:
             if(label == 0):
                 a_token = nlp(answers[i][answer])
                 if len(a_token.ents)==1:
-                    label = indexthing(a_token.ents[0].label_)
+                    label = ne_indexer.index_of(a_token.ents[0].label_)
         exs.append(SentimentExample(tokenized_cleaned_sent, label))
     return exs
 
@@ -78,11 +102,14 @@ if __name__ == '__main__':
     # Load train, dev, and test exs and index the words.
     train_qs, train_as = read_data(args.train_path)
     dev_qs, dev_as = read_data(args.dev_path)
-    # train_exs = eval func here
-    # dev_exs = eval func here
+    train_exs = read_sentiment_examples(train_qs,train_as)
+    dev_exs = read_sentiment_examples(dev_qs,dev_as)
     print(repr(len(train_exs)) + " / " + repr(len(dev_exs)) + " train/dev examples")
 
-    word_embeddings = read_word_embeddings(args.word_vecs_path)
+
+    # Returns Dictionary mapping words (strings) to vectors (list of floats).
+    # Modify model to expect a dictionary instead of what it has rn. (init function in DANN class in A2 models)
+    word_embeddings = load_cached_embeddings(args.word_vecs_path) 
 
     # Train and evaluate
     model = train_deep_averaging_network(args, train_exs, dev_exs, word_embeddings)
