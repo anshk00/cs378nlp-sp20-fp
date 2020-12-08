@@ -5,8 +5,10 @@ import re
 import string
 import spacy
 import en_core_web_sm
-from utils import load_cached_embeddings
+# from utils import load_cached_embeddings, Indexer, WordEmbeddings
+from utils_qc import Indexer, WordEmbeddings, read_word_embeddings
 import ne_model
+from ne_model import *
 
 def read_data(gold_file):
     """Reads answers from dataset file. Each question (marked by its qid)
@@ -29,11 +31,6 @@ def read_data(gold_file):
                 answers[qa['qid']] = qa['answers']
                 questions[qa['qid']] = qa['question']
     return questions, answers
-
-#Either read data like this ^ or use Dataset to parse/tokenize from data.py
-
-# def main(args):
-#     print("Is main")
 
 
     # mostly look like sentiment_classifier.py form A2, but we have to coonvert the data we're working with to be similar to what is used there
@@ -79,24 +76,79 @@ def read_sentiment_examples(questions, answers) -> List[SentimentExample]:
     ne_indexer.add_and_get_index("CARDINAL")
 
     nlp = en_core_web_sm.load()
-
-    for i in range(len(questions)):
-        tokenized_cleaned_sent = list(filter(lambda x: x != '', questions[i].lower().rstrip().split(" ")))
+    counter=0
+    for q_key in questions:
+        tokenized_cleaned_sent = list(filter(lambda x: x != '', questions[q_key].lower().rstrip().split(" ")))
         # here we determine label using spacy
         label=0
-        for answer in range(len(answers[i])):
+        counter+=1
+        if(counter%5000==0):
+            print("break")
+            break
+        for answer in range(len(answers[q_key])):
             if(label == 0):
-                a_token = nlp(answers[i][answer])
+                a_token = nlp(answers[q_key][answer])
                 if len(a_token.ents)==1:
                     label = ne_indexer.index_of(a_token.ents[0].label_)
         exs.append(SentimentExample(tokenized_cleaned_sent, label))
     return exs
 
+def evaluate(classifier, exs):
+    """
+    Evaluates a given classifier on the given examples
+    :param classifier: classifier to evaluate
+    :param exs: the list of SentimentExamples to evaluate on
+    :return: None (but prints output)
+    """
+    return print_evaluation([ex.label for ex in exs], classifier.predict_all([ex.words for ex in exs]))
+
+
+def print_evaluation(golds: List[int], predictions: List[int]):
+    """
+    Prints evaluation statistics comparing golds and predictions, each of which is a sequence of 0/1 labels.
+    Prints accuracy as well as precision/recall/F1 of the positive class, which can sometimes be informative if either
+    the golds or predictions are highly biased.
+
+    :param golds: gold labels
+    :param predictions: pred labels
+    :return:
+    """
+    num_correct = 0
+    num_pos_correct = 0
+    num_pred = 0
+    num_gold = 0
+    num_total = 0
+    if len(golds) != len(predictions):
+        raise Exception("Mismatched gold/pred lengths: %i / %i" % (len(golds), len(predictions)))
+    for idx in range(0, len(golds)):
+        gold = golds[idx]
+        prediction = predictions[idx]
+        if prediction == gold:
+            num_correct += 1
+        # if prediction == 1:
+        #     num_pred += 1
+        # if gold == 1:
+        #     num_gold += 1
+        # if prediction == 1 and gold == 1:
+        #     num_pos_correct += 1
+        num_total += 1
+    acc = float(num_correct) / num_total
+    output_str = "Accuracy: %i / %i = %f" % (num_correct, num_total, acc)
+    # prec = float(num_pos_correct) / num_pred if num_pred > 0 else 0.0
+    # rec = float(num_pos_correct) / num_gold if num_gold > 0 else 0.0
+    # f1 = 2 * prec * rec / (prec + rec) if prec > 0 and rec > 0 else 0.0
+    # output_str += "; Precision (fraction of predicted positives that are correct): %i / %i = %f" % (num_pos_correct, num_pred, prec)
+    # output_str += "; Recall (fraction of true positives predicted correctly): %i / %i = %f" % (num_pos_correct, num_gold, rec)
+    # output_str += "; F1 (harmonic mean of precision and recall): %f" % f1
+    print(output_str)
+    return acc
+
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
-    parser.add_argument('--train_-path', type=str, help='path to training dataset')
+    parser.add_argument('--train_path', type=str, help='path to training dataset')
     parser.add_argument('--dev_path', type=str, help='path to dev dataset')
+    parser.add_argument('--word_vecs_path', type=str, help="path to glove word embeddings")
     args = parser.parse_args()
 
     # Load train, dev, and test exs and index the words.
@@ -109,18 +161,18 @@ if __name__ == '__main__':
 
     # Returns Dictionary mapping words (strings) to vectors (list of floats).
     # Modify model to expect a dictionary instead of what it has rn. (init function in DANN class in A2 models)
-    word_embeddings = load_cached_embeddings(args.word_vecs_path) 
+    word_embeddings = read_word_embeddings(args.word_vecs_path) 
 
     # Train and evaluate
     model = train_deep_averaging_network(args, train_exs, dev_exs, word_embeddings)
     print("=====Train Accuracy=====")
-    train_acc, train_f1, train_out = evaluate(model, train_exs)
+    train_acc = evaluate(model, train_exs)
     print("=====Dev Accuracy=====")
-    dev_acc, dev_f1, dev_out = evaluate(model, dev_exs)
+    dev_acc = evaluate(model, dev_exs)
 
 
-    data = {'dev_acc': dev_acc, 'dev_f1': dev_f1, 'output': dev_out}
+    data = {'dev_acc': dev_acc}
     print("=====Results=====")
     print(json.dumps(data, indent=2))
-    with open("../results/results.json", 'w') as outfile:
-        json.dump(data, outfile)
+    # with open("../results/results.json", 'w') as outfile:
+    #     json.dump(data, outfile)

@@ -1,0 +1,1 @@
+python3 question_classifier.py --train_path='datasets/squad_train.jsonl.gz' --dev_path='datasets/squad_dev.jsonl.gz' --word_vecs_path='glove/glove.6B.50d.txt' 

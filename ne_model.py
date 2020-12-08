@@ -5,8 +5,31 @@ import torch.nn as nn
 from torch import optim
 import numpy as np
 import random
-from sentiment_data import *
+from typing import List
+import re
+from collections import Counter
+from utils_qc import WordEmbeddings, read_word_embeddings
 
+
+
+class SentimentExample:
+    """
+    Data wrapper for a single example for sentiment analysis.
+
+    Attributes:
+        words (List[string]): list of words
+        label (int): 0 or 1 (0 = negative, 1 = positive)
+    """
+
+    def __init__(self, words, label):
+        self.words = words
+        self.label = label
+
+    def __repr__(self):
+        return repr(self.words) + "; label=" + repr(self.label)
+
+    def __str__(self):
+        return self.__repr__()
 
 class DANN(nn.Module):
     def __init__(self, inp, hid, out, word_embeddings):
@@ -25,7 +48,7 @@ class DANN(nn.Module):
         nn.init.xavier_uniform_(self.W.weight)
 
     def forward(self, wordindices:List[List[int]]) -> List[int]:
-        torc = torch.empty(len(wordindices),300)
+        torc = torch.empty(len(wordindices),50)
         # print(torc.size())
         for j in range(len(wordindices)):
             sum = torch.tensor([np.array(self.preEmbeds(i)) for i in wordindices[j]])
@@ -74,16 +97,16 @@ class NeuralSentimentClassifier(SentimentClassifier):
         self.word_embeddings = word_embeddings
         self.log_softmax = nn.LogSoftmax(dim=0)
     def predict(self, ex_words: List[str]) -> int:
-		sum = torch.Tensor(np.array([self.word_embeddings.get_embedding(word) for word in ex_words]))
-		torc = torch.sum(sum,0)
-		softmax = torch.neg(self.log_softmax(self.dann.W(self.dann.g(self.dann.V(torc)))))   
-		minscore = 100
-		minindex = -1
-		for i in range(len(softmax)):
-			if softmax[i]<minscore:
-				minscore = softmax[i]
-				minindex=i
-		return i
+        sum = torch.Tensor(np.array([self.word_embeddings.get_embedding(word) for word in ex_words]))
+        torc = torch.sum(sum,0)
+        softmax = torch.neg(self.log_softmax(self.dann.W(self.dann.g(self.dann.V(torc)))))   
+        minscore = 100
+        minindex = -1
+        for i in range(len(softmax)):
+            if softmax[i]<minscore:
+                minscore = softmax[i]
+                minindex=i
+        return i
 
 
 def train_deep_averaging_network(args, train_exs: List[SentimentExample], dev_exs: List[SentimentExample], word_embeddings: WordEmbeddings) -> NeuralSentimentClassifier:
@@ -95,13 +118,13 @@ def train_deep_averaging_network(args, train_exs: List[SentimentExample], dev_ex
     :return: A trained NeuralSentimentClassifier model
     """
     random.seed()
-    input_size = 50 if (args.word_vecs_path=='data/glove.6B.50d-relativized.txt') else 300
-    hidden_size = args.hidden_size
+    input_size = 50 # if (args.word_vecs_path=='data/glove.6B.50d-relativized.txt') else 300
+    hidden_size = 200 # args.hidden_size
     output_size = 19 #new number, no longer +/-
-    batch_size = args.batch_size
+    batch_size = 20 # args.batch_size
     dann = DANN(input_size,hidden_size,output_size,word_embeddings)
-    num_epochs = args.num_epochs
-    learning_rate = args.lr
+    num_epochs = 20 # args.num_epochs
+    learning_rate = .01 # args.lr
     nnfun = nn.NLLLoss(reduction='sum')
     optimizer = optim.Adam(dann.parameters(),lr=learning_rate)
     for gen in range(num_epochs):
